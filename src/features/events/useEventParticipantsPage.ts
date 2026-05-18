@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  useBulkUpdateParticipantStatusMutation,
   useCreateParticipantMutation,
   useDeleteParticipantMutation,
   useEventQuery,
@@ -24,6 +25,7 @@ export function useEventParticipantsPage(eventId: string) {
   const participantsQuery = useParticipantsQuery();
   const createParticipant = useCreateParticipantMutation();
   const updateStatus = useUpdateParticipantStatusMutation();
+  const bulkUpdateStatus = useBulkUpdateParticipantStatusMutation();
   const deleteParticipant = useDeleteParticipantMutation();
 
   const [search, setSearch] = useState("");
@@ -85,7 +87,7 @@ export function useEventParticipantsPage(eventId: string) {
   const busyParticipantId = getBusyParticipantId({
     updatingParticipantId: updateStatus.variables?.participantId,
     isUpdating: updateStatus.isPending,
-    deletingParticipantId: deleteParticipant.variables,
+    deletingParticipantId: deleteParticipant.variables?.participantId,
     isDeleting: deleteParticipant.isPending,
   });
 
@@ -134,7 +136,16 @@ export function useEventParticipantsPage(eventId: string) {
 
   async function remove(participantId: string) {
     setRuleError(null);
-    await deleteParticipant.mutateAsync(participantId);
+    const participant = eventParticipants.find((currentParticipant) => currentParticipant.id === participantId);
+
+    if (!participant) {
+      return;
+    }
+
+    await deleteParticipant.mutateAsync({
+      participantId,
+      eventId: participant.eventId,
+    });
     setSelectedParticipantIds((currentSelectedIds) => {
       const nextSelectedIds = new Set(currentSelectedIds);
       nextSelectedIds.delete(participantId);
@@ -190,16 +201,22 @@ export function useEventParticipantsPage(eventId: string) {
 
   async function bulkChangeStatus(status: ParticipantStatus) {
     setRuleError(null);
+    const participantsToUpdate = [...selectedParticipants];
 
     if (!canBulkChangeToStatus(status)) {
       setRuleError("Capacity would be exceeded. Move fewer participants into a coming status.");
       return;
     }
 
-    for (const participant of selectedParticipants) {
-      if (participant.status !== status) {
-        await updateStatus.mutateAsync({ participantId: participant.id, status });
-      }
+    const participantIdsToUpdate = participantsToUpdate
+      .filter((participant) => participant.status !== status)
+      .map((participant) => participant.id);
+
+    if (participantIdsToUpdate.length > 0) {
+      await bulkUpdateStatus.mutateAsync({
+        participantIds: participantIdsToUpdate,
+        status,
+      });
     }
 
     setSelectedParticipantIds(new Set());
@@ -207,9 +224,13 @@ export function useEventParticipantsPage(eventId: string) {
 
   async function bulkRemove() {
     setRuleError(null);
+    const participantsToDelete = [...selectedParticipants];
 
-    for (const participant of selectedParticipants) {
-      await deleteParticipant.mutateAsync(participant.id);
+    for (const participant of participantsToDelete) {
+      await deleteParticipant.mutateAsync({
+        participantId: participant.id,
+        eventId: participant.eventId,
+      });
     }
 
     setSelectedParticipantIds(new Set());
@@ -235,13 +256,14 @@ export function useEventParticipantsPage(eventId: string) {
     },
     status: {
       busyParticipantId,
-      isBulkBusy: updateStatus.isPending || deleteParticipant.isPending,
+      isBulkBusy:
+        updateStatus.isPending || bulkUpdateStatus.isPending || deleteParticipant.isPending,
       canBulkChangeToStatus,
     },
     errors: {
       ruleError,
       createError: createParticipant.isError,
-      updateError: updateStatus.isError,
+      updateError: updateStatus.isError || bulkUpdateStatus.isError,
       deleteError: deleteParticipant.isError,
     },
     actions: {

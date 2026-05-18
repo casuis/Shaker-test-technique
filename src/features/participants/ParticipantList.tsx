@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { EmptyState } from "../../components/EmptyState";
 import { GeneratedAvatar } from "../../components/GeneratedAvatar";
@@ -119,6 +120,18 @@ function BulkActions({
   onBulkStatusChange: (status: ParticipantStatus) => Promise<void>;
   onBulkDelete: () => Promise<void>;
 }) {
+  const [statusAction, setStatusAction] = useState<string>("");
+
+  useEffect(() => {
+    setStatusAction("");
+  }, [selectedCount]);
+
+  async function handleStatusAction(status: string) {
+    setStatusAction(status);
+    await onBulkStatusChange(status as ParticipantStatus);
+    setStatusAction("");
+  }
+
   return (
     <div className="flex flex-col gap-3 border-b border-stone-200 bg-stone-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-sm font-medium text-stone-700">
@@ -126,8 +139,9 @@ function BulkActions({
       </p>
       <div className="grid gap-2 sm:grid-cols-[190px_auto]">
         <Select
+          value={statusAction}
           disabled={selectedCount === 0 || isBusy}
-          onValueChange={(status) => void onBulkStatusChange(status as ParticipantStatus)}
+          onValueChange={(status) => void handleStatusAction(status)}
         >
           <SelectTrigger className="h-9 bg-white">
             <SelectValue placeholder="Change status" />
